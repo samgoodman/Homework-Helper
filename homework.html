@@ -1,0 +1,81 @@
+<?php
+	$name=$_GET["name"];
+	$phone=$_GET["phone"];
+	$email=$_GET["email"];
+	$school=$_GET["school"];
+	$department=$_GET["department"];
+	$class=$_GET["class_number"];
+	$homework=$_GET["homework_number"];
+	$problem=$_GET["problem_number"];
+	$date=date("Ymd");
+	$needsEmail=TRUE;
+
+	if(is_null($problem)){
+		$problem=-1;
+	}
+
+	$servername = "localhost";
+	$username = "root";
+	$password = "outg0anAtk";
+	$dbname = "homework";
+
+	$conn = new mysqli($servername, $username, $password, $dbname);
+	if ($conn->connect_error) {
+	    die("Connection failed: " . $conn->connect_error);
+	} 
+
+	$sql = $conn->prepare("INSERT INTO Student (student_email, phone, name) VALUES (?, ?, ?)");
+	$sql->bind_param("sss", $email, $phone, $name);
+	if ($sql->execute()) {
+	} else {
+	    #echo "Error on student insertion!";
+	}
+
+	$sql = $conn->prepare("INSERT INTO Problem (problem_number, homework_number, class_number, department, school) VALUES (?, ?, ?, ?, ?)");
+	$sql->bind_param("iiiss", $problem, $homework, $class, $department, $school);
+	if ($sql->execute()) {
+	} else {
+	    #echo "Error on problem insertion!";
+	}
+
+
+	$sql = $conn->prepare("INSERT INTO WantsHelpWith (student_email, problem_number, homework_number, class_number, department, school, date) VALUES (?, ?, ?, ?, ?, ?, ?)");
+	$sql->bind_param("siiisss", $email, $problem, $homework, $class, $department, $school, $date);
+	if ($sql->execute()) {
+	} else {
+	    #echo "Error on problem-student pairing!";
+		$needsEmail=FALSE;
+	}
+
+	$sql = $conn->prepare("SELECT DISTINCT s.name, s.student_email, s.phone, w.blockEmails FROM Student s join WantsHelpWith w ON s.student_email=w.student_email WHERE w.school= ? and w.department= ? and w.class_number= ? and w.homework_number= ? and (w.problem_number= ? or w.problem_number=-1) and DATEDIFF(?, w.date) < 30");
+	$sql->bind_param("ssiiis", $school, $department, $class, $homework, $problem, $date);
+	$sql->execute();
+	$sql->bind_result($result_name, $result_email, $result_phone, $blockEmails);
+
+	$rows = array();
+	$emailsNeeded = array();
+	while($sql->fetch()){
+		$row = array();
+		$row['name']=$result_name;
+		$row['student_email']=$result_email;
+		$row['phone']=$result_phone;
+		array_push($rows, $row);
+
+		if($needsEmail and $result_email!=$email and $blockEmails!=1){
+			$toSend = array($result_email, $result_name, $name, $email, $phone, $department, $class, $homework);
+			array_push($emailsNeeded, $toSend);
+		}
+	}
+	echo json_encode($rows);
+
+	foreach($emailsNeeded as $array){
+		$sql = $conn->prepare("INSERT INTO EmailsToSend (target_email, target_name, classmate_name, classmate_email, classmate_phone, department, class_number, homework_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+		$sql->bind_param("ssssssii", $array[0], $array[1], $array[2], $array[3], $array[4], $array[5], $array[6], $array[7]);
+		$sql->execute();
+	}
+
+	$sql->close();
+	$conn->close();
+
+
+?>
